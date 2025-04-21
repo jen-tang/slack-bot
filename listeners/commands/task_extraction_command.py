@@ -4,11 +4,18 @@ import datetime
 import traceback
 from logging import Logger
 from slack_bolt import Ack, Respond
-from langchain_openai.chat_models import AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI
 import requests
 import pytz
+import os
+from dotenv import load_dotenv
 # Import your AzureChatOpenAI from your Azure OpenAI client package
 # e.g., from azure_openai import AzureChatOpenAI
+from .email_service import get_gmail_service, send_task_email
+
+# Load environment variables
+load_dotenv()
+
 today = date.today()
 client = "viki"
 def ai_extract_task_deadline(message):
@@ -20,7 +27,7 @@ Instructions:
 1. Output a valid JSON object exactly in the following format with no extra text:
    {{"task": <task description or null>, "deadline": <deadline as YYYY-MM-DD HH:mm or null>, "timeProvided": <true or false>, "details": <additional task details or null>}}
 
-2. The "task" key should contain the extracted task description, or null if no task is found.
+2. The "task" key should contain the extracted task description. There should always be a task.
 
 3. The "deadline" key should contain the computed deadline formatted as YYYY-MM-DD HH:mm, or null if no deadline is mentioned.
    - Compute the deadline using any relative date references (e.g., "tomorrow", "Friday", "next Monday") based on today's date.
@@ -31,7 +38,8 @@ Instructions:
    - false if no explicit time is provided.
 
 5. Today's date is provided as {today}. Compute any relative dates based on this value.
-6. The "details" key should contain any additional details or context about the task, or null if no additional details are present.
+6. The "details" key should contain all given additional details or context about the task, or null if no additional details are present. 
+Be thorough in your detail extraction, do not miss any details. Make sure to include all metrics, numbers, and other relevant information.
 
 Examples:
 - Input: "Remind me to call John tomorrow" with {today} = 2025-04-08.
@@ -50,18 +58,20 @@ Now extract the task and deadline from the following message:
 """
     
     try:
-        # Hardcoded credentials with CORRECT parameter naming
+        # Use environment variables for Azure OpenAI credentials
         client = AzureChatOpenAI(
-            api_key="8ARZDFxrDQtiv8v27HmctsxYVHcQ2CqRIYAZMtT3bbnWGv64c6KnJQQJ99BDACHYHv6XJ3w3AAABACOG6ML0",
-            api_version="2024-02-15-preview",
-            azure_endpoint="https://gmail-filter.openai.azure.com",
-            deployment_name="gpt-4o-mini",
+            api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
+            api_version=os.environ.get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
+            deployment_name=os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME"),
             temperature=0.0
         )
         
         response = client.invoke(extraction_prompt)
         
         result = json.loads(response.content)
+        print(f"AI Extraction Result: {result}")  # Log the result
+        
         task = result.get("task")
         deadline_str = result.get("deadline")
         deadline = datetime.datetime.strptime(deadline_str, "%Y-%m-%d %H:%M") if deadline_str else None
@@ -81,12 +91,61 @@ def task_extraction_command_callback(command, ack: Ack, respond: Respond, logger
         
         task, deadline, time_provided, details = ai_extract_task_deadline(message)
         
-        if task and deadline:
+        if task:
             response_text = f"I've extracted the following task to send to the team:\n"
             response_text += f"*Task:* {task}\n"
-            response_text += f"*Deadline:* {deadline.strftime('%Y-%m-%d %H:%M')}\n"
+            
+            if deadline:
+                response_text += f"*Deadline:* {deadline.strftime('%Y-%m-%d %H:%M')}\n"
+                            # Localize it to your local timezone (e.g., America/New_York)
+                local_tz = pytz.timezone("America/New_York")
+                deadline_local = local_tz.localize(deadline)
+
+                # Convert to UTC correctly
+                deadline_utc = deadline_local.astimezone(datetime.timezone.utc)
+                # Get Unix timestamp (in seconds) as a float
+                deadline_unix = deadline_utc.timestamp()*1000
+                print(deadline_unix)
+            else:
+                response_text += "*Deadline:* Not specified\n"  # Handle the case where deadline is None
+                deadline = "Not specified"
+            
             if details:
                 response_text += f"*Details:* {details}\n"
+            else:
+                details = "Not specified"
+            
+            # Send email notification
+            #email_sent = send_task_email(task, deadline, details)
+            email_sent = get_gmail_service(task, deadline, details, message)
+            if email_sent:
+                response_text += "\nEmail notification has been sent."
+            else:
+                response_text += "\nFailed to send email notification."
+            
+            
+
+            # Prepare ClickUp API payload
+            payload = {
+                "name": task,
+                "description": details,
+                "due_date": int(deadline_unix) if not isinstance(deadline, str) else None,  # Handle None deadline
+                "due_date_time": time_provided,
+                "tags": [client]
+            }
+            
+            # Use environment variables for ClickUp API
+            list_id = os.environ.get("CLICKUP_LIST_ID")
+            url = f"https://api.clickup.com/api/v2/list/{list_id}/task"
+            headers = {
+                "accept": "application/json",
+                "content-type": "application/json",
+                "Authorization": os.environ.get("CLICKUP_API_KEY")
+            }
+
+            response = requests.post(url, json=payload, headers=headers)
+            print(response.text)
+
             # Return the response as part of the acknowledgment with response_type set to "in_channel"
             ack({
                 "response_type": "in_channel",
@@ -96,7 +155,7 @@ def task_extraction_command_callback(command, ack: Ack, respond: Respond, logger
             # If extraction fails, you might choose to send an ephemeral message.
             ack({
                 "response_type": "ephemeral",
-                "text": "I couldn't extract a clear task and deadline from your message. Please check the logs for details."
+                "text": "I couldn't extract a clear task from your message. Please check the logs for details."
             })
             
     except Exception as e:
@@ -106,39 +165,6 @@ def task_extraction_command_callback(command, ack: Ack, respond: Respond, logger
             "response_type": "ephemeral",
             "text": f"Sorry, I encountered an error while processing your message: {str(e)}"
         })
-    # clickup section
-    
-
-
-    # Localize it to your local timezone (e.g., America/New_York)
-    local_tz = pytz.timezone("America/New_York")
-    deadline_local = local_tz.localize(deadline)
-
-    # Convert to UTC correctly
-    deadline_utc = deadline_local.astimezone(datetime.timezone.utc)
-    # Get Unix timestamp (in seconds) as a float
-    deadline_unix = deadline_utc.timestamp()*1000
-    print(deadline_unix)
-
-
-
-    url = "https://api.clickup.com/api/v2/list/901109414101/task"
-    payload = {
-        "name": task,
-        "description": details,
-        "due_date": int(deadline_unix),
-        "due_date_time": True,
-        "tags": [client]
-    }
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "Authorization": "pk_81499542_V6BGC0JBMHU4UHRA9HPKTPCHQLT98V18"
-    }
-
-    response = requests.post(url, json=payload, headers=headers)
-
-    print(response.text)
 
 
 
