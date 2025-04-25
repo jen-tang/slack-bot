@@ -182,7 +182,7 @@ def gmail_authenticate():
 def get_gmail_service(task, deadline, details, original):
     service = gmail_authenticate()
     header = task + " - CONFIRMATION"
-    body = "Task: " + task + "\n" + "Deadline: " + deadline + "\n" + "Details: " + details + "\n\n\n" + "Original Request: " + original
+    body = "Task: " + task + "\n" + "Deadline: " + str(deadline) + "\n" + "Details: " + details + "\n\n\n" + "Original Request: " + original
     send_message(service, "jennifer.tang@directagents.com", header, body, [])
     if send_message:
         return True

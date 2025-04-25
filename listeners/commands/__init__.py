@@ -10,6 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def register(app: App):
-    app.command("/sample-command")(sample_command_callback)
+#    app.command("/sample-command")(sample_command_callback)
     app.command("/task")(task_extraction_command_callback)
 
