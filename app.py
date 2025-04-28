@@ -1,6 +1,6 @@
 import os
 import logging
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -8,7 +8,7 @@ from listeners import register_listeners
 from listeners.messages.message_listeners import register_message_listeners  # Updated import
 
 # Load environment variables from .env file
-load_dotenv()
+#load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
 

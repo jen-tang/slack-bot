@@ -1,7 +1,7 @@
 import base64
 from email.message import EmailMessage
 import os
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 import google.auth
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -23,7 +23,7 @@ from email.mime.base import MIMEBase
 from mimetypes import guess_type as guess_mime_type
 
 # Load environment variables
-load_dotenv()
+#load_dotenv()
 
 
 our_email = "jennifer.tang@directagents.com"

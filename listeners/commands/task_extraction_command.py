@@ -7,7 +7,7 @@ from langchain_openai import AzureChatOpenAI
 import requests
 import pytz
 import os
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 # Import your AzureChatOpenAI from your Azure OpenAI client package
 # e.g., from azure_openai import AzureChatOpenAI
 from .email_service import get_gmail_service, send_task_email
@@ -15,7 +15,7 @@ import time
 from threading import Thread
 
 # Load environment variables
-load_dotenv()
+#load_dotenv()
 
 today = date.today()
 client = "viki"
