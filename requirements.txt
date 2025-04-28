@@ -35,6 +35,7 @@ google-auth
 google-auth-oauthlib
 requests
 slack-sdk
+slack-bolt
 tornado==6.4.2
 traitlets==5.14.3
 urllib3==2.3.0
